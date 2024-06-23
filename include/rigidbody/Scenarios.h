@@ -258,12 +258,58 @@ public:
 
         std::cout << "Loading custom scenario." << std::endl;
 
-        // TODO Objective #7 
+        // TODO Objective #7
         // Create your own interesting scenario. Be creative!
-        // Your scenario should be more than just a trivial extension 
+        // Your scenario should be more than just a trivial extension
         // of an existing example.
         //
 
-    }
+        rigidBodySystem.clear();
+        polyscope::removeAllStructures();
 
+        std::cout << "Loading custom scenario: Domino effect with spheres, boxes, and cylinders." << std::endl;
+
+        // Create a ground plane
+        RigidBody* groundPlane = new RigidBody(1.0f, new Plane(Eigen::Vector3f(0.0f, 1.0f, 0.0f), Eigen::Vector3f(0.0f, 0.0f, 0.0f)), createPlane(Eigen::Vector3f(0.0f, 0.0f, 0.0f), Eigen::Vector3f(0.0f, 1.0f, 0.0f)));
+        groundPlane->fixed = true;
+        groundPlane->mesh->setSurfaceColor({ 0.8f, 0.8f, 0.8f })->setTransparency(0.4f);
+        rigidBodySystem.addBody(groundPlane);
+
+        // Create a series of boxes arranged like dominos
+        const int numBoxes = 10;
+        const Eigen::Vector3f boxDim(0.5f, 1.0f, 0.2f);
+        for (int i = 0; i < numBoxes; ++i)
+        {
+            RigidBody* box = new RigidBody(1.0f, new Box(boxDim), createBox(boxDim));
+            box->x = { float(i) * 1.2f, 0.5f, 0.0f };
+            box->mesh->setSurfaceColor({ 0.1f, 0.5f, 0.8f })->setTransparency(0.6f);
+            rigidBodySystem.addBody(box);
+        }
+
+        // Create a sphere to push the dominos
+        RigidBody* sphere = new RigidBody(1.0f, new Sphere(0.5f), createSphere(0.5f));
+        sphere->x = { -2.0f, 0.5f, 0.0f };
+        sphere->xdot = { 5.0f, 0.0f, 0.0f };
+        sphere->mesh->setSurfaceColor({ 1.0f, 0.1f, 0.1f })->setTransparency(0.6f);
+        rigidBodySystem.addBody(sphere);
+
+        // Create a series of cylinders acting as obstacles
+        const int numCylinders = 5;
+        for (int i = 0; i < numCylinders; ++i)
+        {
+            RigidBody* cylinder = new RigidBody(1.0f, new Cylinder(1.0f, 0.3f), createCylinder(16, 0.3f, 1.0f));
+            cylinder->x = { float(i) * 2.0f - 1.0f, 0.5f, -1.5f };
+            cylinder->q = Eigen::AngleAxisf(1.57f, Eigen::Vector3f(0, 1, 0));
+            cylinder->mesh->setSurfaceColor({ 0.1f, 1.0f, 0.1f })->setTransparency(0.6f);
+            rigidBodySystem.addBody(cylinder);
+        }
+
+        // Create a ramp to add some vertical interaction
+        RigidBody* ramp = new RigidBody(1.0f, new Box(Eigen::Vector3f(5.0f, 0.5f, 2.0f)), createBox(Eigen::Vector3f(5.0f, 0.5f, 2.0f)));
+        ramp->x = { 6.0f, 0.25f, 0.0f };
+        ramp->q = Eigen::AngleAxisf(-0.2f, Eigen::Vector3f(0, 0, 1));
+        ramp->fixed = true;
+        ramp->mesh->setSurfaceColor({ 0.5f, 0.3f, 0.2f })->setTransparency(0.4f);
+        rigidBodySystem.addBody(ramp);
+    }
 };

@@ -88,9 +88,39 @@ void RigidBodySystem::step(float dt)
         // TODO Objective #1
         // Numerical integration of rigid bodies.
         // For each rigid body in @m_bodies, perform numerical integration to:
-        //   1. First update the velocities of each rigid body in @a m_bodies, 
+        //   1. First update the velocities of each rigid body in @a m_bodies,
         //   2. Followed by updates of the positions and orientations.
         //
+
+        if (!b->fixed)
+        {
+            // Update linear velocity
+            b->v += dt * (b->f + b->fc) / b->mass;
+
+            // Update angular velocity
+            b->omega += dt * (b->Iinv * (b->tau + b->tauc));
+
+            // Update position
+            b->x += dt * b->v;
+
+            // Update orientation using the angular velocity
+            Eigen::Matrix3f R = b->theta.toRotationMatrix();
+            Eigen::Matrix3f dR = Eigen::Matrix3f::Identity();
+            Eigen::Vector3f omega_dt = dt * b->omega;
+            dR(0, 1) = -omega_dt(2);
+            dR(0, 2) = omega_dt(1);
+            dR(1, 0) = omega_dt(2);
+            dR(1, 2) = -omega_dt(0);
+            dR(2, 0) = -omega_dt(1);
+            dR(2, 1) = omega_dt(0);
+            R += R * dR;
+
+            // Re-normalize the rotation matrix to avoid drift
+            Eigen::JacobiSVD<Eigen::Matrix3f> svd(R, Eigen::ComputeFullU | Eigen::ComputeFullV);
+            R = svd.matrixU() * svd.matrixV().transpose();
+
+            b->theta = Eigen::Quaternionf(R);
+        }
     }
 }
 

@@ -26,5 +26,34 @@ void Distance::computeJacobian()
     // of the distance constraint.
     //
 
+    // Positions des points d'attachement dans le repère du monde
+    Eigen::Vector3f p0 = body0->x + body0->theta * r0;
+    Eigen::Vector3f p1 = body1->x + body1->theta * r1;
+
+    // Vecteur entre les deux points d'attachement
+    Eigen::Vector3f dVec = p1 - p0;
+
+    // Longueur actuelle du vecteur
+    float dist = dVec.norm();
+
+    // Direction de la contrainte
+    Eigen::Vector3f n = dVec / dist;
+
+    // Calcul de l'erreur de contrainte
+    phi[0] = dist - d;
+
+    // Jacobien pour body0
+    J0.block<1, 3>(0, 0) = -n.transpose();
+    J0.block<1, 3>(0, 3) = -(body0->theta * r0).cross(n).transpose();
+
+    // Jacobien pour body1
+    J1.block<1, 3>(0, 0) = n.transpose();
+    J1.block<1, 3>(0, 3) = (body1->theta * r1).cross(n).transpose();
+
+    // Précalcul des termes J0Minv et J1Minv
+    J0Minv.block<1, 3>(0, 0) = J0.block<1, 3>(0, 0) * (1.0f / body0->mass);
+    J0Minv.block<1, 3>(0, 3) = J0.block<1, 3>(0, 3) * body0->Iinv;
+    J1Minv.block<1, 3>(0, 0) = J1.block<1, 3>(0, 0) * (1.0f / body1->mass);
+    J1Minv.block<1, 3>(0, 3) = J1.block<1, 3>(0, 3) * body1->Iinv;
 }
 

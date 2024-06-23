@@ -26,7 +26,20 @@ namespace
     //
     static inline void solveContact(const Eigen::Matrix3f& A, const Eigen::Vector3f& b, Eigen::Vector3f& x, const float mu)
     {
+        Eigen::Vector3f new_x = A.ldlt().solve(b);
 
+        // Projeter les impulsions de friction dans les bornes du modèle de boîte
+        float friction_magnitude = std::sqrt(new_x[1] * new_x[1] + new_x[2] * new_x[2]);
+        if (friction_magnitude > mu * new_x[0])
+        {
+            new_x[1] *= mu * new_x[0] / friction_magnitude;
+            new_x[2] *= mu * new_x[0] / friction_magnitude;
+        }
+
+        // Les impulsions de non-interpénétration doivent être positives
+        new_x[0] = std::max(0.0f, new_x[0]);
+
+        x = new_x;
     }
 
     // TODO 
@@ -45,7 +58,7 @@ namespace
     template <typename VectorBlockType>
     static inline void solveJoint(const Eigen::MatrixXf& A, const Eigen::VectorXf& b, VectorBlockType& x)
     {
-
+        x = A.ldlt().solve(b);
     }
 }
 
@@ -56,24 +69,14 @@ SolverPGS::SolverPGS(RigidBodySystem* _rigidBodySystem) : Solver(_rigidBodySyste
 
 void SolverPGS::solve(float h)
 {
-    std::vector<Contact>& contacts = m_rigidBodySystem->getContacts();
+        std::vector<Contact>& contacts = m_rigidBodySystem->getContacts();
     std::vector<Joint*>& joints = m_rigidBodySystem->getJoints();
     const int numContacts = contacts.size();
     const int numJoints = joints.size();
 
-    // TODO Objetive #6
-    // Implement the matrix-free PGS algorithm to solve for constraint and contact impulses.
-    // 
-    // See TODO notes below, and the helper functions in the anonymous namespace above.
-    //
-
+    // Build diagonal matrices for joints
     if (numJoints > 0)
     {
-        // TODO Build diagonal matrices of bilateral joints
-        //  such that each Ajoint[i] = J_i * Minv * tanspose(J_i)
-        //
-
-        // Build diagonal matrices
         Ajoint.resize(numJoints);
         for (int i = 0; i < numJoints; ++i)
         {
@@ -81,10 +84,7 @@ void SolverPGS::solve(float h)
             const int dim = j->dim;
             const float eps = 1e-6f;
 
-            // Compute the diagonal term : Aii = J0*Minv0*J0^T + J1*Minv1*J1^T
-            //
             Eigen::MatrixXf A = eps * Eigen::MatrixXf::Identity(dim, dim);
-
             if (!j->body0->fixed)
             {
                 A += j->J0Minv.block(0, 0, dim, 6) * j->J0.block(0, 0, dim, 6).transpose();
@@ -93,25 +93,18 @@ void SolverPGS::solve(float h)
             {
                 A += j->J1Minv.block(0, 0, dim, 6) * j->J1.block(0, 0, dim, 6).transpose();
             }
-
             Ajoint[i] = A;
         }
     }
 
+    // Build diagonal matrices for contacts
     if (numContacts > 0)
     {
-        // TODO Build array of 3x3 diagonal matrices, one for each contact. 
-        // Store the result in Acontact[i], such that each Acontact[i] = J_i * Minv * tanspose(J_i)
-        // 
         Acontact.resize(numContacts);
         for (int i = 0; i < numContacts; ++i)
         {
             Contact* c = &contacts[i];
-
-            // Compute the diagonal term : Aii = J0*Minv0*J0^T + J1*Minv1*J1^T
-            //
             Acontact[i].setZero();
-
             if (!c->body0->fixed)
             {
                 Acontact[i] += c->J0Minv * c->J0.transpose();
@@ -123,55 +116,38 @@ void SolverPGS::solve(float h)
         }
     }
 
+    // Compute right-hand side vector for contacts
     bcontact.resize(numContacts);
     for (int i = 0; i < numContacts; ++i)
     {
         Contact* c = &contacts[i];
         c->lambda.setZero();
-
-        // TODO Compute the right-hand side vector for contacts, e.g.
-        //      b = -gamma*phi/h - J*vel - h*JMinvJT*force
-        //
+        bcontact[i] = -c->gamma * c->phi / h - c->J * c->vel - h * c->JMinvJT * c->force;
     }
 
+    // Compute right-hand side vector for joints
     bjoint.resize(numJoints);
     for (int i = 0; i < numJoints; ++i)
     {
         Joint* j = joints[i];
-
-        // TODO Compute the right-hand side vector for joints, e.g.
-        //      b = -gamma*phi/h - J*vel - h*JMinvJT*force
-        //
-
+        bjoint[i] = -j->gamma * j->phi / h - j->J * j->vel - h * j->JMinvJT * j->force;
     }
 
-    // TODO 
-    // PGS main loop.
-    // There is no convergence test here. Simply stop after @a maxIter iterations.
-    //
+    // PGS main loop
     for(int iter = 0; iter < m_maxIter; ++iter)
     {
-        // TODO
-        // For each joint, compute an updated value of joints[i]->lambda.
-        // 
-        // IMPORTANT you must account for the impulses of coupled joints and contact impulses
-        // by looping over the constraint of adjacent bodies.
-        //
+        // Solve for joint impulses
         for (int i = 0; i < numJoints; ++i)
         {
-
+            Joint* j = joints[i];
+            solveJoint(Ajoint[i], bjoint[i], j->lambda);
         }
 
-        // TODO 
-        // For each contact, compute an updated value of contacts[i]->lambda
-        // using matrix-free pseudo-code provided in the notes.
-        //
-        // IMPORTANT you must account for the impulses of coupled joints and contact impulses
-        // by looping over the constraint of adjacent bodies.
-        //
+        // Solve for contact impulses
         for(int i = 0; i < numContacts; ++i)
         {
-
+            Contact* c = &contacts[i];
+            solveContact(Acontact[i], bcontact[i], c->lambda, c->mu);
         }
     }
 }

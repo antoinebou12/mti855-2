@@ -141,6 +141,20 @@ void CollisionDetect::collisionDetectSphereSphere(RigidBody* body0, RigidBody* b
     // compute the contact normal, contact point, and penetration depth.
     //
 
+    Sphere* sphere0 = dynamic_cast<Sphere*>(body0->geometry.get());
+    Sphere* sphere1 = dynamic_cast<Sphere*>(body1->geometry.get());
+
+    Eigen::Vector3f d = body1->x - body0->x;
+    float dist = d.norm();
+    float penetration = sphere0->radius + sphere1->radius - dist;
+
+    if (penetration > 0)
+    {
+        Eigen::Vector3f n = d / dist;
+        Eigen::Vector3f p = body0->x + n * sphere0->radius;
+        m_contacts.emplace_back(body0, body1, p, n, penetration);
+    }
+
 }
 
 void CollisionDetect::collisionDetectSphereBox(RigidBody* body0, RigidBody* body1)
@@ -157,6 +171,31 @@ void CollisionDetect::collisionDetectSphereBox(RigidBody* body0, RigidBody* body
     // is positioned completely inside of the box.
     //
 
+    Sphere* sphere = dynamic_cast<Sphere*>(body0->geometry.get());
+    Box* box = dynamic_cast<Box*>(body1->geometry.get());
+
+    // Position du centre de la sphère dans le repère de la boîte
+    Eigen::Vector3f sphereCenterLocal = body1->q.inverse() * (body0->x - body1->x);
+
+    // Trouver le point le plus proche sur la boîte
+    Eigen::Vector3f closestPointLocal;
+    for (int i = 0; i < 3; ++i)
+    {
+        closestPointLocal[i] = std::max(-box->dim[i] * 0.5f, std::min(sphereCenterLocal[i], box->dim[i] * 0.5f));
+    }
+
+    Eigen::Vector3f closestPointWorld = body1->q * closestPointLocal + body1->x;
+    Eigen::Vector3f d = body0->x - closestPointWorld;
+    float dist = d.norm();
+    float penetration = sphere->radius - dist;
+
+    if (penetration > 0)
+    {
+        Eigen::Vector3f n = d / dist;
+        Eigen::Vector3f p = closestPointWorld;
+        m_contacts.emplace_back(body0, body1, p, n, penetration);
+    }
+
 }
 
 
@@ -165,11 +204,37 @@ void CollisionDetect::collisionDetectCylinderSphere(RigidBody* body0, RigidBody*
     Cylinder* cyl = dynamic_cast<Cylinder*>(body0->geometry.get());
     Sphere* sphere = dynamic_cast<Sphere*>(body1->geometry.get());
 
-    // TODO Objective #4 
-    // Implement cylinder-spher ecollision detection. 
+    // TODO Objective #4
+    // Implement cylinder-spher ecollision detection.
     // The function should check if a collision exists, and if it does
     // compute the contact normal, contact point, and penetration depth.
     //
+
+    Cylinder* cyl = dynamic_cast<Cylinder*>(body0->geometry.get());
+    Sphere* sphere = dynamic_cast<Sphere*>(body1->geometry.get());
+
+    // Axis of the cylinder in world coordinates
+    Eigen::Vector3f cylAxis = body0->q * Eigen::Vector3f(0, 1, 0);
+
+    // Vector from the base of the cylinder to the sphere center
+    Eigen::Vector3f d = body1->x - body0->x;
+
+    // Project d onto the cylinder axis to find the closest point on the cylinder axis to the sphere center
+    float proj = d.dot(cylAxis);
+    proj = std::max(-cyl->height * 0.5f, std::min(proj, cyl->height * 0.5f));
+    Eigen::Vector3f closestPointOnAxis = body0->x + proj * cylAxis;
+
+    // Vector from the closest point on the cylinder axis to the sphere center
+    Eigen::Vector3f v = body1->x - closestPointOnAxis;
+    float dist = v.norm();
+    float penetration = cyl->radius + sphere->radius - dist;
+
+    if (penetration > 0)
+    {
+        Eigen::Vector3f n = v / dist;
+        Eigen::Vector3f p = closestPointOnAxis + n * cyl->radius;
+        m_contacts.emplace_back(body0, body1, p, n, penetration);
+    }
 
 }
 
@@ -312,14 +377,13 @@ void CollisionDetect::collisionDetectCylinderPlane(RigidBody* body0, RigidBody* 
             m_contacts.emplace_back(body0, body1, p, n, phi);
         }
     }
-    
 }
 
 void CollisionDetect::collisionDetectBoxPlane(RigidBody* body0, RigidBody* body1)
 {
     Box* box = dynamic_cast<Box*>(body0->geometry.get());
     Plane* plane = dynamic_cast<Plane*>(body1->geometry.get());
-  
+
     const std::vector<Eigen::Vector3f> pts = {
         0.5f * Eigen::Vector3f(-box->dim[0], -box->dim[1], -box->dim[2]),
         0.5f * Eigen::Vector3f(-box->dim[0], -box->dim[1], box->dim[2]),
